@@ -239,7 +239,7 @@ impl Walk<'_> {
             let mut nodes = Vec::new();
             for index in candidates {
                 let mut rows = Vec::new();
-                state.enodes_for_eclass(&self.ctors[index].name, value, |enode| {
+                state.constructor_enodes_for_eclass(&self.ctors[index].name, value, |enode| {
                     rows.push((enode.children.to_vec(), enode.subsumed));
                 })?;
                 nodes.extend(rows.into_iter().map(|(children, subsumed)| ENode {
@@ -399,7 +399,7 @@ impl Walk<'_> {
             // skipped, and which children are still imageless.
             for ctor in &self.ctors {
                 let mut rows = Vec::new();
-                let _ = state.enodes_for_eclass(&ctor.name, *eclass, |enode| {
+                let _ = state.constructor_enodes_for_eclass(&ctor.name, *eclass, |enode| {
                     rows.push((enode.children.to_vec(), enode.subsumed));
                 });
                 for (children, subsumed) in rows {
