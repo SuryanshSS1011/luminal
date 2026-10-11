@@ -712,8 +712,8 @@ pub(super) mod tests {
     #[should_panic(expected = "Dims must match to add tensors.")]
     fn test_add_rejects_implicit_broadcast() {
         let mut cx = Graph::new();
-        let a = cx.tensor((2, 3), luminal::dtype::DType::F32);
-        let b = cx.tensor((1, 3), luminal::dtype::DType::F32);
+        let a = cx.tensor(vec![2, 3], luminal::dtype::DType::F32);
+        let b = cx.tensor(vec![1, 3], luminal::dtype::DType::F32);
         let _ = a + b;
     }
 
@@ -721,8 +721,8 @@ pub(super) mod tests {
     #[should_panic(expected = "Dims must match to multiply tensors.")]
     fn test_mul_rejects_implicit_broadcast() {
         let mut cx = Graph::new();
-        let a = cx.tensor((2, 3), luminal::dtype::DType::F32);
-        let b = cx.tensor((1, 3), luminal::dtype::DType::F32);
+        let a = cx.tensor(vec![2, 3], luminal::dtype::DType::F32);
+        let b = cx.tensor(vec![1, 3], luminal::dtype::DType::F32);
         let _ = a * b;
     }
 
@@ -730,8 +730,8 @@ pub(super) mod tests {
     #[should_panic(expected = "Dims must match to mod tensors.")]
     fn test_mod_rejects_implicit_broadcast() {
         let mut cx = Graph::new();
-        let a = cx.tensor((2, 3), luminal::dtype::DType::F32);
-        let b = cx.tensor((1, 3), luminal::dtype::DType::F32);
+        let a = cx.tensor(vec![2, 3], luminal::dtype::DType::F32);
+        let b = cx.tensor(vec![1, 3], luminal::dtype::DType::F32);
         let _ = a % b;
     }
 
@@ -739,8 +739,8 @@ pub(super) mod tests {
     #[should_panic(expected = "Dims must match to lt tensors.")]
     fn test_lt_rejects_implicit_broadcast() {
         let mut cx = Graph::new();
-        let a = cx.tensor((2, 3), luminal::dtype::DType::F32);
-        let b = cx.tensor((1, 3), luminal::dtype::DType::F32);
+        let a = cx.tensor(vec![2, 3], luminal::dtype::DType::F32);
+        let b = cx.tensor(vec![1, 3], luminal::dtype::DType::F32);
         let _ = a.lt(b);
     }
 
@@ -748,8 +748,8 @@ pub(super) mod tests {
         #![proptest_config(ProptestConfig::with_cases(10))]
         #[test]
         fn test_add(x in 1..100, y in 1..5) {
-            test_binary(x, x, |a, b| a + b, |a, b| (&a + &b).unwrap());
-            test_binary((y, x), (y, x), |a, b| a + b, |a, b| (&a + &b).unwrap());
+            test_binary(vec![x], vec![x], |a, b| a + b, |a, b| (&a + &b).unwrap());
+            test_binary(vec![y, x], vec![y, x], |a, b| a + b, |a, b| (&a + &b).unwrap());
         }
     }
 
@@ -757,8 +757,8 @@ pub(super) mod tests {
         #![proptest_config(ProptestConfig::with_cases(10))]
         #[test]
         fn test_sub(x in 1..100, y in 1..5) {
-            test_binary(x, x, |a, b| a - b, |a, b| (&a - &b).unwrap());
-            test_binary((y, x), (y, x), |a, b| a - b, |a, b| (&a - &b).unwrap());
+            test_binary(vec![x], vec![x], |a, b| a - b, |a, b| (&a - &b).unwrap());
+            test_binary(vec![y, x], vec![y, x], |a, b| a - b, |a, b| (&a - &b).unwrap());
         }
     }
 
@@ -766,10 +766,10 @@ pub(super) mod tests {
         #![proptest_config(ProptestConfig::with_cases(10))]
         #[test]
         fn test_mul(x in 1..100, y in 1..5) {
-            test_binary(x, x, |a, b| a * b, |a, b| (&a * &b).unwrap());
+            test_binary(vec![x], vec![x], |a, b| a * b, |a, b| (&a * &b).unwrap());
             test_binary(
-                (2, y, x),
-                (2, y, x),
+                vec![2, y, x],
+                vec![2, y, x],
                 |a, b| a * b,
                 |a, b| (&a * &b).unwrap(),
             );
@@ -781,8 +781,8 @@ pub(super) mod tests {
         #[test]
         fn test_div(x in 1..100) {
             test_binary_transforms(
-                x,
-                x,
+                vec![x],
+                vec![x],
                 |a, b| a / b,
                 |a, b| (&a / &b).unwrap(),
                 identity,
@@ -795,7 +795,7 @@ pub(super) mod tests {
         #![proptest_config(ProptestConfig::with_cases(10))]
         #[test]
         fn test_maximum(x in 1..100) {
-            test_binary(x, x, |a, b| a.maximum(b), |a, b| a.maximum(&b).unwrap());
+            test_binary(vec![x], vec![x], |a, b| a.maximum(b), |a, b| a.maximum(&b).unwrap());
         }
     }
 
@@ -803,7 +803,7 @@ pub(super) mod tests {
         #![proptest_config(ProptestConfig::with_cases(10))]
         #[test]
         fn test_minimum(x in 1..100) {
-            test_binary(x, x, |a, b| a.minimum(b), |a, b| a.minimum(&b).unwrap());
+            test_binary(vec![x], vec![x], |a, b| a.minimum(b), |a, b| a.minimum(&b).unwrap());
         }
     }
 
@@ -812,8 +812,8 @@ pub(super) mod tests {
         #[test]
         fn test_mod(size in 1usize..64) {
             test_binary_transforms(
-                size,
-                size,
+                vec![size],
+                vec![size],
                 |a, b| a % b,
                 |a, b| {
                     let lhs = a.to_vec1::<f32>().unwrap();
@@ -833,8 +833,8 @@ pub(super) mod tests {
         fn test_mod_scalar_broadcast(size in 1usize..64) {
             // rank-0 RHS expanded against rank-N LHS, mirroring `x % torch.tensor(c)`.
             test_binary_transforms(
-                size,
-                (),
+                vec![size],
+                vec![] as Vec<usize>,
                 |a, b| a % b.expand_rhs(a.dims()),
                 |a, b| {
                     let lhs = a.to_vec1::<f32>().unwrap();
@@ -853,8 +853,8 @@ pub(super) mod tests {
         #[test]
         fn test_lt(size in 1usize..64) {
             test_binary(
-                size,
-                size,
+                vec![size],
+                vec![size],
                 |a, b| a.lt(b).cast(luminal::dtype::DType::F32),
                 |a, b| a.lt(&b).unwrap().to_dtype(DType::F32).unwrap(),
             );
@@ -867,8 +867,8 @@ pub(super) mod tests {
         fn test_lt_scalar_broadcast(size in 1usize..64) {
             // rank-0 RHS expanded against rank-N LHS for `lt`.
             test_binary(
-                size,
-                (),
+                vec![size],
+                vec![] as Vec<usize>,
                 |a, b| a.lt(b.expand_rhs(a.dims())).cast(luminal::dtype::DType::F32),
                 |a, b| {
                     let scalar = b.to_scalar::<f32>().unwrap();
@@ -888,8 +888,8 @@ pub(super) mod tests {
         #[test]
         fn test_gt(size in 1usize..64) {
             test_binary(
-                size,
-                size,
+                vec![size],
+                vec![size],
                 |a, b| a.gt(b).cast(luminal::dtype::DType::F32),
                 |a, b| a.gt(&b).unwrap().to_dtype(DType::F32).unwrap(),
             );
@@ -901,8 +901,8 @@ pub(super) mod tests {
         #[test]
         fn test_le(size in 1usize..64) {
             test_binary(
-                size,
-                size,
+                vec![size],
+                vec![size],
                 |a, b| a.le(b).cast(luminal::dtype::DType::F32),
                 |a, b| a.le(&b).unwrap().to_dtype(DType::F32).unwrap(),
             );
@@ -914,8 +914,8 @@ pub(super) mod tests {
         #[test]
         fn test_ge(size in 1usize..64) {
             test_binary(
-                size,
-                size,
+                vec![size],
+                vec![size],
                 |a, b| a.ge(b).cast(luminal::dtype::DType::F32),
                 |a, b| a.ge(&b).unwrap().to_dtype(DType::F32).unwrap(),
             );
@@ -925,8 +925,8 @@ pub(super) mod tests {
     #[test]
     fn test_ne() {
         test_binary(
-            27,
-            27,
+            vec![27],
+            vec![27],
             |a, b| {
                 let result = a.ne(b);
                 assert_eq!(result.dtype, luminal::dtype::DType::Bool);
@@ -939,8 +939,8 @@ pub(super) mod tests {
     #[test]
     fn test_eq() {
         test_binary(
-            27,
-            27,
+            vec![27],
+            vec![27],
             |a, b| a.eq(b).cast(luminal::dtype::DType::F32),
             |a, b| a.eq(&b).unwrap().to_dtype(DType::F32).unwrap(),
         );
@@ -1000,8 +1000,8 @@ pub(super) mod tests {
     #[test]
     fn test_pow() {
         test_binary_transforms(
-            27,
-            27,
+            vec![27],
+            vec![27],
             |a, _| a.pow(2.5f32),
             |a, _| a.powf(2.5f64).unwrap(),
             positive_from_zero,
@@ -1057,8 +1057,8 @@ pub(super) mod tests {
     #[test]
     fn test_clip() {
         test_binary_transforms(
-            27,
-            27,
+            vec![27],
+            vec![27],
             |a, _| a.clip(-0.25, 0.25),
             |a, _| a.clamp(-0.25, 0.25).unwrap(),
             identity,
@@ -1069,8 +1069,8 @@ pub(super) mod tests {
     #[test]
     fn test_maximum_f32() {
         test_binary_transforms(
-            27,
-            27,
+            vec![27],
+            vec![27],
             |a, _| a.maximum_f32(0.1),
             |a, _| {
                 a.maximum(&Tensor::new(vec![0.1f32; 27], &Device::Cpu).unwrap())
@@ -1084,8 +1084,8 @@ pub(super) mod tests {
     #[test]
     fn test_minimum_f32() {
         test_binary_transforms(
-            27,
-            27,
+            vec![27],
+            vec![27],
             |a, _| a.minimum_f32(-0.1),
             |a, _| {
                 a.minimum(&Tensor::new(vec![-0.1f32; 27], &Device::Cpu).unwrap())
@@ -1099,8 +1099,8 @@ pub(super) mod tests {
     #[test]
     fn test_cond() {
         test_binary(
-            27,
-            27,
+            vec![27],
+            vec![27],
             |a, b| {
                 // gt() returns Bool, cast to F32 for cond which expects F32
                 let cond = a

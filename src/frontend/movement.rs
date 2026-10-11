@@ -900,8 +900,8 @@ impl GraphTensor {
     /// ```
     /// # use luminal::prelude::*;
     /// # let mut cx = Graph::new();
-    /// let a = cx.tensor((5, 10), DType::F32);
-    /// let b = a.slice((2..4, 1..)); // 2x9 tensor
+    /// let a = cx.tensor(vec![5, 10], DType::F32);
+    /// let b = a.slice(vec![(2..4).bounds(), (1..).bounds()]); // 2x9 tensor
     /// assert_eq!(b.dims(), vec![IntExpr::from(2), IntExpr::from(9)]);
     /// ```
     pub fn slice(self, slice: impl ToSlice) -> GraphTensor {
@@ -969,7 +969,7 @@ impl GraphTensor {
     /// ```
     /// # use luminal::prelude::*;
     /// # let mut cx = Graph::new();
-    /// let a = cx.tensor((5, 10), DType::F32);
+    /// let a = cx.tensor(vec![5, 10], DType::F32);
     /// let b = a.slice_along(4.., 1); // 5x6 tensor
     /// assert_eq!(b.dims(), vec![IntExpr::from(5), IntExpr::from(6)]);
     /// ```
@@ -1170,8 +1170,8 @@ mod tests {
             // pinned_pure_identity_output; binding-level fix at 4d/M4).
             prop_assume!(left + right > 0);
             test_unary(
-                len,
-                |a| a.pad((left, right), 0.),
+                vec![len],
+                |a| a.pad(vec![(left, right)], 0.),
                 |a| a.pad_with_zeros(0, left, right).unwrap(),
             );
         }
@@ -1182,8 +1182,8 @@ mod tests {
         #[test]
         fn test_pad_2d(rows in 1usize..32, cols in 1usize..32, top in 0usize..6, bottom in 0usize..6, left in 0usize..6, right in 0usize..6) {
             test_unary(
-                (rows, cols),
-                |a| a.pad(((top, bottom), (left, right)), 0.),
+                vec![rows, cols],
+                |a| a.pad(vec![(top, bottom), (left, right)], 0.),
                 |a| {
                     a.pad_with_zeros(0, top, bottom)
                         .unwrap()
@@ -1212,8 +1212,8 @@ mod tests {
             prop_assume!(start_row < end_row && end_row <= rows);
             prop_assume!(start_col < end_col && end_col <= cols);
             test_unary(
-                (rows, cols),
-                |a| a.slice((start_row..end_row, start_col..end_col)).pad(((pad_top, pad_bottom), (pad_left, pad_right)), 0.),
+                vec![rows, cols],
+                |a| a.slice(vec![(start_row..end_row).bounds(), (start_col..end_col).bounds()]).pad(vec![(pad_top, pad_bottom), (pad_left, pad_right)], 0.),
                 |a| {
                     a.i((start_row..end_row, start_col..end_col))
                         .unwrap()
@@ -1233,7 +1233,7 @@ mod tests {
     #[test]
     fn zero_extent_slice_records_without_special_casing() {
         let mut cx = Graph::new();
-        let input = cx.tensor((1, 4, 64), DType::F32);
+        let input = cx.tensor(vec![1, 4, 64], DType::F32);
         let empty = input.slice_along(64.., 2);
 
         assert_eq!(
@@ -1247,7 +1247,7 @@ mod tests {
         #[test]
         fn test_transpose(rows in 1usize..32, cols in 1usize..32) {
             test_unary(
-                (rows, cols),
+                vec![rows, cols],
                 |a| a.transpose(0, 1) * 1.0,
                 |a| a.transpose(0, 1).unwrap(),
             );
@@ -1382,8 +1382,8 @@ mod tests {
         }
 
         test_unary(
-            5,
-            |a| a.unfold(3, 1, 1),
+            vec![5],
+            |a| a.unfold(vec![3], vec![1], vec![1]),
             |a| {
                 Tensor::new(
                     unfold_nd_f32(
@@ -1402,8 +1402,11 @@ mod tests {
             },
         );
         test_unary(
-            (8, 10),
-            |a| a.pad(((0, 2), (4, 4)), 0.).unfold((2, 3), (1, 2), (2, 1)),
+            vec![8, 10],
+            |a| {
+                a.pad(vec![(0, 2), (4, 4)], 0.)
+                    .unfold(vec![2, 3], vec![1, 2], vec![2, 1])
+            },
             |a| {
                 Tensor::new(
                     unfold_nd_f32(
@@ -1426,21 +1429,23 @@ mod tests {
     #[test]
     fn test_unfold_floor_div_shape_for_odd_window_numerator() {
         let mut cx = Graph::new();
-        let inp = cx.tensor((80, 3000), DType::F32);
-        let out = inp.pad(((0, 0), (1, 1)), 0.).unfold((1, 3), (1, 2), (1, 1));
+        let inp = cx.tensor(vec![80, 3000], DType::F32);
+        let out = inp
+            .pad(vec![(0, 0), (1, 1)], 0.)
+            .unfold(vec![1, 3], vec![1, 2], vec![1, 1]);
         assert_eq!(out.dims(), &[80, 1500, 1, 3]);
     }
 
     #[test]
     fn test_unsqueeze() {
         let mut cx = Graph::new();
-        let inp = cx.tensor((2, 2, 3), DType::F32);
+        let inp = cx.tensor(vec![2, 2, 3], DType::F32);
         let out1 = inp.unsqueeze(1);
         let out2 = inp.unsqueeze(3);
         assert_eq!(out1.dims(), &[2, 1, 2, 3]);
         assert_eq!(out2.dims(), &[2, 2, 3, 1]);
         test_unary(
-            (1, 3),
+            vec![1, 3],
             |a| a.squeeze(0).expand_dim(0, 2) * 1.,
             |a| a.broadcast_as((2, 3)).unwrap(),
         );
@@ -1448,37 +1453,41 @@ mod tests {
         // view-only outputs share the input's buffer id — the 4d binding
         // gap (see stage4b_probes::pinned_pure_identity_output).
         test_unary(
-            (2, 1, 3),
+            vec![2, 1, 3],
             |a| a.squeeze(1) * 1.0,
             |a| a.reshape((2, 3)).unwrap(),
         );
         // Bare squeeze — a pure-VIEW output, no materializing op. The
         // delivery-copy fix (2026-08-05) materializes it at the boundary.
-        test_unary((2, 1, 3), |a| a.squeeze(1), |a| a.reshape((2, 3)).unwrap());
+        test_unary(
+            vec![2, 1, 3],
+            |a| a.squeeze(1),
+            |a| a.reshape((2, 3)).unwrap(),
+        );
     }
 
     #[test]
     fn test_concat() {
         test_binary(
-            17,
-            32,
+            vec![17],
+            vec![32],
             |a, b| a.concat_along(b, 0),
             |a, b| Tensor::cat(&[a, b], 0).unwrap(),
         );
         test_binary(
-            (10, 4),
-            (10, 6),
+            vec![10, 4],
+            vec![10, 6],
             |a, b| a.concat_along(b, 1),
             |a, b| Tensor::cat(&[a, b], 1).unwrap(),
         );
         test_binary(
-            (4, 10),
-            (6, 10),
+            vec![4, 10],
+            vec![6, 10],
             |a, b| a.concat_along(b, 0),
             |a, b| Tensor::cat(&[a, b], 0).unwrap(),
         );
         test_unary(
-            (4, 10),
+            vec![4, 10],
             |a| a.concat_along(a, 0),
             |a| Tensor::cat(&[a.clone(), a], 0).unwrap(),
         );
@@ -1495,8 +1504,8 @@ mod tests {
     #[test]
     fn test_repeat_is_view_only() {
         let mut cx = Graph::new();
-        let a = cx.tensor((2, 3), DType::F32);
-        let repeated = a.repeat((2, 2));
+        let a = cx.tensor(vec![2, 3], DType::F32);
+        let repeated = a.repeat(vec![2, 2]);
 
         assert_ne!(
             repeated.id, a.id,
@@ -1522,9 +1531,9 @@ mod tests {
     #[test]
     fn pad_with_uses_a_typed_scalar_fill() {
         let mut cx = Graph::new();
-        let a = cx.tensor(3, DType::F32);
+        let a = cx.tensor(vec![3], DType::F32);
         let fill = cx.constant_f32(-7.0);
-        let b = a.pad_with((1, 2), fill);
+        let b = a.pad_with(vec![(1, 2)], fill);
 
         let rt = luminal_reference::harness::run_reference(
             &cx,
@@ -1539,8 +1548,8 @@ mod tests {
     #[test]
     fn test_repeat_runtime_values() {
         let mut cx = Graph::new();
-        let a = cx.tensor((2, 3), DType::F32);
-        let repeated = a.repeat((2, 2)) * 1.0;
+        let a = cx.tensor(vec![2, 3], DType::F32);
+        let repeated = a.repeat(vec![2, 2]) * 1.0;
 
         let rt = luminal_reference::harness::run_reference(
             &cx,

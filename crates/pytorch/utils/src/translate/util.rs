@@ -250,7 +250,7 @@ impl Translator<'_> {
         let scan = if product {
             pair.cumprod(0)
         } else {
-            pair.cumsum(0)
+            pair.cumsum(&[0])
         };
         scan.slice_along(1..2, 0).squeeze(0)
     }
@@ -556,7 +556,7 @@ mod reshape_order_tests {
     #[test]
     fn reshape_preserves_target_order() {
         let mut cx = Graph::new();
-        let x = cx.tensor((1usize, 4usize, 64usize), DType::F32);
+        let x = cx.tensor(vec![1usize, 4usize, 64usize], DType::F32);
         let out = reshape_tensor(x, &[IntExpr::from(4usize), IntExpr::from(64usize)]);
         assert_eq!(
             out.dims(),
@@ -568,7 +568,7 @@ mod reshape_order_tests {
     #[test]
     fn reshape_three_dims_stays_left_to_right() {
         let mut cx = Graph::new();
-        let x = cx.tensor((2usize, 12usize), DType::F32);
+        let x = cx.tensor(vec![2usize, 12usize], DType::F32);
         let out = reshape_tensor(
             x,
             &[

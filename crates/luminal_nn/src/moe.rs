@@ -90,7 +90,7 @@ impl TopKRoutes {
     pub fn normalize(self) -> Self {
         let axis = self.route_axis();
         let slots = self.expert_ids.dims()[axis];
-        let denominator = self.weights.sum(axis).expand_dim(axis, slots);
+        let denominator = self.weights.sum(vec![axis]).expand_dim(axis, slots);
         self.with_weights(self.weights / denominator)
     }
 
@@ -142,7 +142,7 @@ impl TopKRoutes {
             .weights
             .cast(routed_output.dtype)
             .expand_rhs(&output_dims[route_dims.len()..]);
-        (routed_output * weights).sum(self.route_axis())
+        (routed_output * weights).sum(vec![self.route_axis()])
     }
 
     /// Convert structured top-k routes into the general flat route table.
@@ -339,7 +339,7 @@ impl Routes {
                     .iota(output_dims.clone(), |c| c[axis + 1]),
             );
         }
-        destination.scatter(&coords, weighted).sum(1)
+        destination.scatter(&coords, weighted).sum(vec![1])
     }
 }
 
@@ -418,10 +418,10 @@ mod tests {
         const OUTPUT: usize = 2;
 
         let mut cx = Graph::new();
-        let scores = cx.tensor((TOKENS, EXPERTS), DType::F32);
-        let expert_ids = cx.tensor((TOKENS, K), DType::Int);
-        let input = cx.tensor((TOKENS, INPUT), DType::F32);
-        let expert_weights = cx.tensor((EXPERTS, INPUT, OUTPUT), DType::F32);
+        let scores = cx.tensor(vec![TOKENS, EXPERTS], DType::F32);
+        let expert_ids = cx.tensor(vec![TOKENS, K], DType::Int);
+        let input = cx.tensor(vec![TOKENS, INPUT], DType::F32);
+        let expert_weights = cx.tensor(vec![EXPERTS, INPUT, OUTPUT], DType::F32);
 
         let routes = TopKRoutes::from_scores(scores, expert_ids).normalize();
         let dispatched = routes.dispatch(input);
@@ -454,13 +454,13 @@ mod tests {
     #[test]
     fn top_k_routes_preserve_all_token_axes() {
         let mut cx = Graph::new();
-        let expert_ids = cx.tensor((2, 3, 2), DType::Int);
-        let weights = cx.tensor((2, 3, 2), DType::F32);
+        let expert_ids = cx.tensor(vec![2, 3, 2], DType::Int);
+        let weights = cx.tensor(vec![2, 3, 2], DType::F32);
         let routes = TopKRoutes::new(expert_ids, weights);
 
-        let dispatched = routes.dispatch(cx.tensor((2, 3, 4), DType::F32));
-        let selected = routes.select(cx.tensor((5, 4, 6), DType::F32));
-        let combined = routes.combine(cx.tensor((2, 3, 2, 7), DType::F32));
+        let dispatched = routes.dispatch(cx.tensor(vec![2, 3, 4], DType::F32));
+        let selected = routes.select(cx.tensor(vec![5, 4, 6], DType::F32));
+        let combined = routes.combine(cx.tensor(vec![2, 3, 2, 7], DType::F32));
 
         let concrete = |tensor: GraphTensor| {
             tensor
@@ -483,12 +483,12 @@ mod tests {
         const WIDTH: usize = 2;
 
         let mut cx = Graph::new();
-        let token_ids = cx.tensor(ROUTES, DType::Int);
-        let expert_ids = cx.tensor(ROUTES, DType::Int);
-        let slot_ids = cx.tensor(ROUTES, DType::Int);
-        let weights = cx.tensor(ROUTES, DType::F32);
-        let input = cx.tensor((TOKENS, WIDTH), DType::F32);
-        let expert_weights = cx.tensor((EXPERTS, WIDTH, WIDTH), DType::F32);
+        let token_ids = cx.tensor(vec![ROUTES], DType::Int);
+        let expert_ids = cx.tensor(vec![ROUTES], DType::Int);
+        let slot_ids = cx.tensor(vec![ROUTES], DType::Int);
+        let weights = cx.tensor(vec![ROUTES], DType::F32);
+        let input = cx.tensor(vec![TOKENS, WIDTH], DType::F32);
+        let expert_weights = cx.tensor(vec![EXPERTS, WIDTH, WIDTH], DType::F32);
 
         let routes = Routes::new(token_ids, expert_ids, slot_ids, weights, TOKENS, SLOTS);
         let dispatched = routes.dispatch(input);
@@ -528,9 +528,9 @@ mod tests {
         const WIDTH: usize = 2;
 
         let mut cx = Graph::new();
-        let expert_ids = cx.tensor((TOKENS, K), DType::Int);
-        let weights = cx.tensor((TOKENS, K), DType::F32);
-        let routed = cx.tensor((TOKENS, K, WIDTH), DType::F32);
+        let expert_ids = cx.tensor(vec![TOKENS, K], DType::Int);
+        let weights = cx.tensor(vec![TOKENS, K], DType::F32);
+        let routed = cx.tensor(vec![TOKENS, K, WIDTH], DType::F32);
         let top_k = TopKRoutes::new(expert_ids, weights);
         let structured = top_k.combine(routed);
         let general = top_k.into_routes().combine(routed.merge_dims(0, 1));

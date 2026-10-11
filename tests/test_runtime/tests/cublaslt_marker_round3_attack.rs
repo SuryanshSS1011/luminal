@@ -1361,9 +1361,9 @@ fn rc3_second_output_layout_stays_coherent() {
 fn rc4_bias_relu_chain_no_stale_d() {
     let text = {
         let mut cx = Graph::new();
-        let x = cx.tensor((4usize, 8usize), DType::F32);
-        let w = cx.tensor((8usize, 3usize), DType::F32);
-        let b = cx.tensor(3usize, DType::F32);
+        let x = cx.tensor(vec![4usize, 8usize], DType::F32);
+        let w = cx.tensor(vec![8usize, 3usize], DType::F32);
+        let b = cx.tensor(vec![3usize], DType::F32);
         let _ = (x.matmul(w) + b.expand_dim(0, 4usize)).relu();
         test_runtime::bind_leaves(&cx)
     };
@@ -1728,34 +1728,34 @@ fn rp2_decoration_depth_enode_count() {
         (
             "plain",
             Box::new(|cx: &mut Graph| {
-                let x = cx.tensor((4usize, 8usize), DType::F32);
-                let w = cx.tensor((8usize, 3usize), DType::F32);
+                let x = cx.tensor(vec![4usize, 8usize], DType::F32);
+                let w = cx.tensor(vec![8usize, 3usize], DType::F32);
                 let _ = x.matmul(w);
             }),
         ),
         (
             "relu",
             Box::new(|cx: &mut Graph| {
-                let x = cx.tensor((4usize, 8usize), DType::F32);
-                let w = cx.tensor((8usize, 3usize), DType::F32);
+                let x = cx.tensor(vec![4usize, 8usize], DType::F32);
+                let w = cx.tensor(vec![8usize, 3usize], DType::F32);
                 let _ = x.matmul(w).relu();
             }),
         ),
         (
             "bias",
             Box::new(|cx: &mut Graph| {
-                let x = cx.tensor((4usize, 8usize), DType::F32);
-                let w = cx.tensor((8usize, 3usize), DType::F32);
-                let b = cx.tensor(3usize, DType::F32);
+                let x = cx.tensor(vec![4usize, 8usize], DType::F32);
+                let w = cx.tensor(vec![8usize, 3usize], DType::F32);
+                let b = cx.tensor(vec![3usize], DType::F32);
                 let _ = x.matmul(w) + b.expand_dim(0, 4usize);
             }),
         ),
         (
             "bias+relu",
             Box::new(|cx: &mut Graph| {
-                let x = cx.tensor((4usize, 8usize), DType::F32);
-                let w = cx.tensor((8usize, 3usize), DType::F32);
-                let b = cx.tensor(3usize, DType::F32);
+                let x = cx.tensor(vec![4usize, 8usize], DType::F32);
+                let w = cx.tensor(vec![8usize, 3usize], DType::F32);
+                let b = cx.tensor(vec![3usize], DType::F32);
                 let _ = (x.matmul(w) + b.expand_dim(0, 4usize)).relu();
             }),
         ),
@@ -1814,8 +1814,8 @@ fn rp3_product_at_scale() {
                 let mut cx = Graph::new();
                 for i in 0..n {
                     let (m, k, nn) = if same { (4, 8, 3) } else { (4 + i, 8, 2 + i) };
-                    let x = cx.tensor((m, k), DType::F32);
-                    let w = cx.tensor((k, nn), DType::F32);
+                    let x = cx.tensor(vec![m, k], DType::F32);
+                    let w = cx.tensor(vec![k, nn], DType::F32);
                     let _ = x.matmul(w);
                 }
                 test_runtime::bind_leaves(&cx)
@@ -2852,8 +2852,8 @@ fn ru2_left_major_only_election_field_check() {
 fn ru3_m1_corner_multiplicity() {
     let text = {
         let mut cx = Graph::new();
-        let x = cx.tensor((1usize, 4usize), DType::F32);
-        let w = cx.tensor((4usize, 3usize), DType::F32);
+        let x = cx.tensor(vec![1usize, 4usize], DType::F32);
+        let w = cx.tensor(vec![4usize, 3usize], DType::F32);
         let _ = x.matmul(w);
         test_runtime::bind_leaves(&cx)
     };
@@ -2969,7 +2969,7 @@ fn ru3_m1_corner_multiplicity() {
          surface {surface:?} — the reader is walking the welded class"
     );
 
-    // (3) EVERY reachable kernel is numerically sound.
+    // (3) EVERY reachable kernel retains a sound call frame.
     let frames = elect_all(&s);
     println!("  reachable frames: {frames:?}");
     // ROUND-10 RE-PIN: at m=1 the ORIGINAL site's out is COL-presenting
@@ -2977,10 +2977,22 @@ fn ru3_m1_corner_multiplicity() {
     // the DIRECT frame's — call (1, 3, 4), A = x (its welded layout read
     // N or T: lda in {1, 4}), B = w (T: ldb = n = 3), ldd = m = 1. The
     // sibling's candidates exist but the boundary elects the direct claim.
-    // ROUND-11 RE-PIN (was 2): the frame doubling adds the column-form
-    // readings; all reachable kernels stay in the one call frame
-    // (asserted below).
-    assert_eq!(frames.len(), 4, "the sound readings of the welded x layout");
+    // Cleanup prefers direct bound-input storage over an equivalent copied
+    // input. The column-form w readings (N, ldb = 4) remain among the eight
+    // raw candidates above, but are subsumed and cannot be elected. Both
+    // readings of the welded x layout survive with direct w (T, ldb = 3).
+    assert_eq!(frames.len(), 2, "the sound readings of the welded x layout");
+    assert_eq!(
+        frames
+            .iter()
+            .map(|f| (f.trans_a, f.trans_b, f.lda, f.ldb, f.ldd))
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            (false, true, Some(1), Some(3), Some(1)),
+            (true, true, Some(4), Some(3), Some(1)),
+        ]),
+        "both welded x readings must survive with direct weight storage"
+    );
     for f in &frames {
         assert_eq!(
             (f.m, f.n, f.k),
@@ -2993,14 +3005,8 @@ fn ru3_m1_corner_multiplicity() {
             "COL clamp: ldb={:?} < rows(B)={rows_b:?} for {f:?}",
             f.ldb
         );
-        // ROUND-11 RE-PIN (was exactly 3): w reads T in its storage frame
-        // (ldb = n = 3) and N in its column-form frame (ldb = k = 4);
-        // both are w's own numbers, cross-checked by the clamp above.
-        assert!(
-            f.ldb == Some(3) || f.ldb == Some(4),
-            "ldb is one of w's own frame readings, got {:?}",
-            f.ldb
-        );
+        // The surviving w reading uses its original storage frame.
+        assert_eq!(f.ldb, Some(3), "direct weight storage has ldb = n = 3");
         assert_eq!(f.ldd, Some(1), "ldd is the direct frame's m = 1");
         assert!(
             f.lda == Some(4) || f.lda == Some(1),
@@ -3031,14 +3037,14 @@ fn ru3_m1_corner_multiplicity() {
 fn ru4_weld_harvesting_is_cross_tensor() {
     fn gemv(with_stranger: bool) -> String {
         let mut cx = Graph::new();
-        let x = cx.tensor((1usize, 4usize), DType::F32);
-        let w = cx.tensor((4usize, 3usize), DType::F32);
+        let x = cx.tensor(vec![1usize, 4usize], DType::F32);
+        let w = cx.tensor(vec![4usize, 3usize], DType::F32);
         let _ = x.matmul(w);
         if with_stranger {
             // The bait: an unrelated [1,37] tensor whose row coordinate is
             // ALSO the zero class (extent-1 row) and whose cols literal is
             // 37 — exactly what round 4 harvested.
-            let stranger = cx.tensor((1usize, 37usize), DType::F32);
+            let stranger = cx.tensor(vec![1usize, 37usize], DType::F32);
             let _ = stranger + stranger;
         }
         test_runtime::bind_leaves(&cx)
