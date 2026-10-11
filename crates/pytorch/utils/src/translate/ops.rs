@@ -322,7 +322,7 @@ impl Translator<'_> {
                     let zero = self.full_tensor(zero_shape, result.dtype, 0.0);
                     result = zero
                         .concat_along(result, axis)
-                        .cumsum(axis)
+                        .cumsum(&[axis])
                         .slice_along(extent..extent + 1, axis)
                         .squeeze(axis);
                 }

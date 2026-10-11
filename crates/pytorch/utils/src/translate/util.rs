@@ -250,7 +250,7 @@ impl Translator<'_> {
         let scan = if product {
             pair.cumprod(0)
         } else {
-            pair.cumsum(0)
+            pair.cumsum(&[0])
         };
         scan.slice_along(1..2, 0).squeeze(0)
     }

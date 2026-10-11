@@ -189,8 +189,8 @@ impl Translator<'_> {
 
         let mut attn = scores.softmax(vec![q_ndim - 1]);
         let row_max = scores
-            .max(q_ndim - 1)
-            .expand_to_shape_on_axes(scores.dims(), q_ndim - 1);
+            .max(vec![q_ndim - 1])
+            .expand_to_shape_on_axes(scores.dims(), vec![q_ndim - 1]);
         let negative_infinity = self.constant_like(row_max, f64::NEG_INFINITY);
         let masked_row = row_max.eq(negative_infinity);
         let zero = self.constant_like(attn, 0.0);
