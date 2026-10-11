@@ -16,9 +16,9 @@
 //! use luminal_training::{Backward, Optimizer, SGD};
 //!
 //! let mut cx = Graph::new();
-//! let w = cx.tensor((3, 4), DType::F32);
-//! let x = cx.tensor((2, 3), DType::F32);
-//! let loss = x.matmul(w).sum((0, 1));
+//! let w = cx.tensor(vec![3, 4], DType::F32);
+//! let x = cx.tensor(vec![2, 3], DType::F32);
+//! let loss = x.matmul(w).sum(vec![0, 1]);
 //! let grads = cx.backward(loss, &[w]);
 //! let opt = SGD::new(1e-2).momentum(0.9);
 //! let step = opt.build(&mut cx, &[w], &grads);
@@ -115,7 +115,7 @@ impl Optimizer for SGD {
         grads: &[GraphTensor],
     ) -> OptimizerStep {
         assert_eq!(params.len(), grads.len());
-        let lr = cx.tensor((), DType::F32);
+        let lr = cx.tensor(vec![] as Vec<usize>, DType::F32);
         let mut step = OptimizerStep {
             new_params: vec![],
             state_in: vec![],
@@ -203,7 +203,7 @@ impl Optimizer for AdamW {
         grads: &[GraphTensor],
     ) -> OptimizerStep {
         assert_eq!(params.len(), grads.len());
-        let alpha_t = cx.tensor((), DType::F32);
+        let alpha_t = cx.tensor(vec![] as Vec<usize>, DType::F32);
         let mut step = OptimizerStep {
             new_params: vec![],
             state_in: vec![],
@@ -214,7 +214,7 @@ impl Optimizer for AdamW {
         // Decoupled decay uses the unscheduled base lr, fed separately so
         // schedules on α_t don't have to alter the decay strength.
         let lr = if self.weight_decay != 0.0 {
-            let lr = cx.tensor((), DType::F32);
+            let lr = cx.tensor(vec![] as Vec<usize>, DType::F32);
             step.scalar_in.push(lr);
             Some(lr)
         } else {

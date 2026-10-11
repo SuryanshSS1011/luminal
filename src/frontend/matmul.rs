@@ -62,7 +62,7 @@ impl GraphTensor {
                 * rhs.record_view_map(vec![c(0, k), c(1, n)], p);
 
             // Sum Reduce
-            let mut ret = mul.sum(2);
+            let mut ret = mul.sum(vec![2]);
             if vec {
                 ret = ret.squeeze(0);
             }
@@ -79,7 +79,7 @@ impl GraphTensor {
                     * rhs.record_view_map(vec![c(0, k), c(1, d)], p);
 
                 // Sum Reduce
-                mul.sum(3)
+                mul.sum(vec![3])
             } else if rhs.rank() == 3 {
                 // ABKxAKD -> ABD
                 let (ra, rk, d) = rhs.dims3();
@@ -91,7 +91,7 @@ impl GraphTensor {
                     * rhs.record_view_map(vec![c(3, a), c(0, k), c(1, d)], p);
 
                 // Sum Reduce
-                mul.sum(3)
+                mul.sum(vec![3])
             } else {
                 panic!(
                     "Can't matmul lhs {:?} and rhs {:?}",
@@ -112,7 +112,7 @@ impl GraphTensor {
                     * rhs.record_view_map(vec![c(0, k), c(1, e)], p);
 
                 // Sum Reduce
-                mul.sum(4)
+                mul.sum(vec![4])
             } else if rhs.rank() == 4 {
                 // ABCKxABKE -> ABCE
                 let (ra, rb, rk, e) = rhs.dims4();
@@ -126,7 +126,7 @@ impl GraphTensor {
                     * rhs.record_view_map(vec![c(4, a), c(3, b), c(0, k), c(1, e)], p);
 
                 // Sum Reduce
-                mul.sum(4)
+                mul.sum(vec![4])
             } else {
                 panic!(
                     "Can't matmul lhs {:?} and rhs {:?}",
@@ -153,7 +153,7 @@ impl GraphTensor {
                 .record_view_map(vec![c(5, a), c(4, b), c(3, cc), c(0, k), c(1, f)], p);
 
             // Sum Reduce
-            mul.sum(5)
+            mul.sum(vec![5])
         } else {
             panic!(
                 "Can't matmul lhs {:?} and rhs {:?}",
@@ -165,7 +165,7 @@ impl GraphTensor {
 
     /// Simple dot product of two vectors
     pub fn dot(self, rhs: GraphTensor) -> GraphTensor {
-        (self * rhs).sum(0)
+        (self * rhs).sum(vec![0])
     }
 }
 
@@ -180,8 +180,8 @@ mod tests {
         // 2026-08-27 ruling: the F32-accumulator contract is the user's
         // explicit cast spelling — matmul itself never casts.
         let mut cx = Graph::new();
-        let lhs = cx.tensor((2, 4), DType::F8E4M3FN);
-        let rhs = cx.tensor((4, 3), DType::F8E4M3FN);
+        let lhs = cx.tensor(vec![2, 4], DType::F8E4M3FN);
+        let rhs = cx.tensor(vec![4, 3], DType::F8E4M3FN);
 
         let out = lhs.cast(DType::F32).matmul(rhs.cast(DType::F32));
 
@@ -199,8 +199,8 @@ mod tests {
         // 2026-08-27 ruling: fp8 x fp8 is NOT special — matmul is
         // broadcast+reduce in the shared dtype, no casts, no poison.
         let mut cx = Graph::new();
-        let lhs = cx.tensor((2, 4), DType::F8E4M3FN);
-        let rhs = cx.tensor((4, 3), DType::F8E4M3FN);
+        let lhs = cx.tensor(vec![2, 4], DType::F8E4M3FN);
+        let rhs = cx.tensor(vec![4, 3], DType::F8E4M3FN);
 
         let out = lhs.matmul(rhs);
 
@@ -217,8 +217,8 @@ mod tests {
     #[should_panic(expected = "cast explicitly")]
     fn mixed_dtype_matmul_refuses_at_construction() {
         let mut cx = Graph::new();
-        let lhs = cx.tensor((2, 4), DType::F32);
-        let rhs = cx.tensor((4, 3), DType::F16);
+        let lhs = cx.tensor(vec![2, 4], DType::F32);
+        let rhs = cx.tensor(vec![4, 3], DType::F16);
         let _ = lhs.matmul(rhs);
     }
 
@@ -228,8 +228,8 @@ mod tests {
     #[should_panic(expected = "cast explicitly")]
     fn int_float_matmul_refuses_with_the_cast_message() {
         let mut cx = Graph::new();
-        let lhs = cx.tensor((2, 4), DType::Int);
-        let rhs = cx.tensor((4, 3), DType::F32);
+        let lhs = cx.tensor(vec![2, 4], DType::Int);
+        let rhs = cx.tensor(vec![4, 3], DType::F32);
         let _ = lhs.matmul(rhs);
     }
 
@@ -260,8 +260,8 @@ mod tests {
         #[test]
         fn test_matrix_vector(m in 1usize..6, k in 1usize..6, n in 1usize..6) {
             test_binary(
-                (m, k),
-                (k, n),
+                vec![m, k],
+                vec![k, n],
                 |a, b| a.matmul(b),
                 |a, b| a.matmul(&b).unwrap(),
             );
@@ -273,8 +273,8 @@ mod tests {
         #[test]
         fn test_matmul(m in 1usize..6, k in 1usize..6, n in 1usize..6) {
             test_binary(
-                (m, k),
-                (k, n),
+                vec![m, k],
+                vec![k, n],
                 |a, b| a.matmul(b),
                 |a, b| a.matmul(&b).unwrap(),
             );
@@ -286,8 +286,8 @@ mod tests {
         #[test]
         fn test_batch_matmul(batch in 1usize..4, m in 1usize..6, k in 1usize..6, n in 1usize..6) {
             test_binary(
-                (batch, m, k),
-                (k, n),
+                vec![batch, m, k],
+                vec![k, n],
                 |a, b| a.matmul(b),
                 |a, b| {
                     a.reshape((batch * m, k))
@@ -306,14 +306,14 @@ mod tests {
         #[test]
         fn test_batch_batch_matmul(batch in 1usize..4, m in 1usize..6, k in 1usize..6, n in 1usize..6) {
             test_binary(
-                (batch, m, k),
-                (batch, m, k),
-                |a, b| a.matmul(b.permute((0, 2, 1))),
+                vec![batch, m, k],
+                vec![batch, m, k],
+                |a, b| a.matmul(b.permute(vec![0, 2, 1])),
                 |a, b| a.matmul(&b.permute((0, 2, 1)).unwrap()).unwrap(),
             );
             test_binary(
-                (batch, m, k),
-                (batch, k, n),
+                vec![batch, m, k],
+                vec![batch, k, n],
                 |a, b| a.matmul(b),
                 |a, b| a.matmul(&b).unwrap(),
             );

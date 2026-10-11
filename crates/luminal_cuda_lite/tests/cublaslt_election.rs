@@ -157,8 +157,8 @@ fn cublaslt_contracts_are_registered_host_call_claims() {
     // with it — the same derivation `allow_list` runs, over the registry
     // a caller picks when it wants the multiply/reduce route.
     let mut cx = Graph::new();
-    let a = cx.tensor((2usize, 3usize), DType::F32);
-    let b = cx.tensor((2usize, 3usize), DType::F32);
+    let a = cx.tensor(vec![2usize, 3usize], DType::F32);
+    let b = cx.tensor(vec![2usize, 3usize], DType::F32);
     let _out = a + b;
     let decomposed =
         CudaRuntime::load_with_registry(&cx, luminal_cuda_lite::cuda_registry_without_cublaslt())
@@ -190,6 +190,33 @@ fn cublaslt_contracts_are_registered_host_call_claims() {
     }
 }
 
+#[test]
+fn bf16_matmul_widened_to_f32_mints_cublaslt_candidate() {
+    let mut cx = Graph::new();
+    let a = cx.tensor(vec![4usize, 8usize], DType::Bf16);
+    let b = cx.tensor(vec![8usize, 3usize], DType::Bf16);
+    let _out = a.matmul(b).cast(DType::F32);
+    let runtime = CudaRuntime::load_with_registry(&cx, luminal_cuda_lite::cuda_registry())
+        .expect("load mixed BF16 graph");
+    let egraph = runtime
+        .saturated_egraph(&Default::default())
+        .expect("saturate mixed BF16 graph");
+    assert!(
+        egraph
+            .nodes
+            .values()
+            .any(|node| node.op == "LayoutTensorOpCublasLt"),
+        "BF16 x BF16 followed by an F32 cast must offer a cuBLASLt candidate"
+    );
+    assert!(
+        egraph
+            .nodes
+            .values()
+            .any(|node| node.op == "LayoutTensorOpCublasLt" && node.subsumed),
+        "a direct cuBLASLt input must dominate an equivalent copied input"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // THE PIN: the shape the marker DOES match.
 // ---------------------------------------------------------------------------
@@ -201,8 +228,8 @@ fn cublaslt_contracts_are_registered_host_call_claims() {
 )]
 fn canonical_2d_matmul_elects_the_marker() {
     let mut cx = Graph::new();
-    let a = cx.tensor((4usize, 8usize), DType::F32);
-    let b = cx.tensor((8usize, 3usize), DType::F32);
+    let a = cx.tensor(vec![4usize, 8usize], DType::F32);
+    let b = cx.tensor(vec![8usize, 3usize], DType::F32);
     let _out = a.matmul(b);
 
     let pairs: Vec<(NodeIndex, HostBuffer)> =
@@ -250,7 +277,7 @@ fn election_row_conv() {
     use model_zoo::mini::conv::MiniConvNet;
     let mut cx = Graph::new();
     let model = MiniConvNet::new(1, 2, 3, 2, &mut cx);
-    let x = cx.tensor((1, 1, 5, 5), DType::F32);
+    let x = cx.tensor(vec![1, 1, 5, 5], DType::F32);
     let _out = model.forward(x);
     let pairs: Vec<(NodeIndex, HostBuffer)> = vec![
         (x.id, weights(25, 1).into()),
@@ -275,11 +302,11 @@ fn election_row_llama3() {
     const D: usize = 8;
     let mut cx = Graph::new();
     let model = MiniLlama3::new(VOCAB, D, 12, 4, 2, 1, &mut cx);
-    let ids = cx.tensor(1, DType::Int);
-    let k_cache = cx.tensor((4, 4), DType::F32);
-    let v_cache = cx.tensor((4, 4), DType::F32);
-    let gather_idx = cx.tensor(2, DType::Int);
-    let scatter_idx = cx.tensor(1, DType::Int);
+    let ids = cx.tensor(vec![1], DType::Int);
+    let k_cache = cx.tensor(vec![4, 4], DType::F32);
+    let v_cache = cx.tensor(vec![4, 4], DType::F32);
+    let gather_idx = cx.tensor(vec![2], DType::Int);
+    let scatter_idx = cx.tensor(vec![1], DType::Int);
     let caches = vec![(k_cache, v_cache)];
     let (logits, _caches_out) =
         model.forward(ids, &caches, gather_idx, scatter_idx, IntExpr::from(1usize));
@@ -319,11 +346,11 @@ fn election_row_qwen3() {
     const HD: usize = 2;
     let mut cx = Graph::new();
     let model = MiniQwen3::new(VOCAB, D, 12, 4, 2, 1, &mut cx);
-    let ids = cx.tensor(1, DType::Int);
-    let k_cache = cx.tensor((4, 4), DType::F32);
-    let v_cache = cx.tensor((4, 4), DType::F32);
-    let gather_idx = cx.tensor(2, DType::Int);
-    let scatter_idx = cx.tensor(1, DType::Int);
+    let ids = cx.tensor(vec![1], DType::Int);
+    let k_cache = cx.tensor(vec![4, 4], DType::F32);
+    let v_cache = cx.tensor(vec![4, 4], DType::F32);
+    let gather_idx = cx.tensor(vec![2], DType::Int);
+    let scatter_idx = cx.tensor(vec![1], DType::Int);
     let caches = vec![(k_cache, v_cache)];
     let (logits, _caches_out) =
         model.forward(ids, &caches, gather_idx, scatter_idx, IntExpr::from(1usize));
@@ -363,8 +390,8 @@ fn election_row_whisper() {
     const FF: usize = 6;
     let mut cx = Graph::new();
     let model = MiniWhisper::new(D, FF, 2, &mut cx);
-    let audio = cx.tensor((2, D), DType::F32);
-    let tokens = cx.tensor((1, D), DType::F32);
+    let audio = cx.tensor(vec![2, D], DType::F32);
+    let tokens = cx.tensor(vec![1, D], DType::F32);
     let _out = model.forward(audio, tokens);
     let pairs: Vec<(NodeIndex, HostBuffer)> = vec![
         (audio.id, weights(2 * D, 1).into()),
@@ -399,11 +426,11 @@ fn election_row_qwen3_moe() {
     const D: usize = 4;
     let mut cx = Graph::new();
     let model = MiniQwen3Moe::new(VOCAB, D, 2, 1, 2, 1, &mut cx);
-    let ids = cx.tensor(1, DType::Int);
-    let k_cache = cx.tensor((4, D), DType::F32);
-    let v_cache = cx.tensor((4, D), DType::F32);
-    let gather_idx = cx.tensor(2, DType::Int);
-    let scatter_idx = cx.tensor(1, DType::Int);
+    let ids = cx.tensor(vec![1], DType::Int);
+    let k_cache = cx.tensor(vec![4, D], DType::F32);
+    let v_cache = cx.tensor(vec![4, D], DType::F32);
+    let gather_idx = cx.tensor(vec![2], DType::Int);
+    let scatter_idx = cx.tensor(vec![1], DType::Int);
     let caches = vec![(k_cache, v_cache)];
     let (logits, _) = model.forward(ids, &caches, gather_idx, scatter_idx, IntExpr::from(1usize));
     let _logits = logits;
@@ -441,11 +468,11 @@ fn election_row_gemma4_moe() {
     const D: usize = 4;
     let mut cx = Graph::new();
     let model = MiniGemma4Moe::new(VOCAB, D, 2, 1, 2, 1, &mut cx);
-    let ids = cx.tensor(1, DType::Int);
-    let k_cache = cx.tensor((4, D), DType::F32);
-    let v_cache = cx.tensor((4, D), DType::F32);
-    let gather_idx = cx.tensor(2, DType::Int);
-    let scatter_idx = cx.tensor(1, DType::Int);
+    let ids = cx.tensor(vec![1], DType::Int);
+    let k_cache = cx.tensor(vec![4, D], DType::F32);
+    let v_cache = cx.tensor(vec![4, D], DType::F32);
+    let gather_idx = cx.tensor(vec![2], DType::Int);
+    let scatter_idx = cx.tensor(vec![1], DType::Int);
     let caches = vec![(k_cache, v_cache)];
     let (logits, _) = model.forward(ids, &caches, gather_idx, scatter_idx, IntExpr::from(1usize));
     let _logits = logits;
@@ -492,26 +519,26 @@ fn election_row_gemma3() {
     const LAYERS: usize = 2;
 
     let mut cx = Graph::new();
-    let ids = cx.tensor(1, DType::Int);
+    let ids = cx.tensor(vec![1], DType::Int);
     let caches: Vec<_> = (0..LAYERS)
         .map(|_| {
             (
-                cx.tensor((SLOTS, KV_DIM), DType::F32),
-                cx.tensor((SLOTS, KV_DIM), DType::F32),
+                cx.tensor(vec![SLOTS, KV_DIM], DType::F32),
+                cx.tensor(vec![SLOTS, KV_DIM], DType::F32),
             )
         })
         .collect();
-    let gather_idx = cx.tensor(2, DType::Int);
-    let scatter_idx = cx.tensor(1, DType::Int);
+    let gather_idx = cx.tensor(vec![2], DType::Int);
+    let scatter_idx = cx.tensor(vec![1], DType::Int);
     let rope_inputs: Vec<_> = (0..LAYERS)
         .map(|_| {
             (
-                cx.tensor((1, HD), DType::F32),
-                cx.tensor((1, HD), DType::F32),
+                cx.tensor(vec![1, HD], DType::F32),
+                cx.tensor(vec![1, HD], DType::F32),
             )
         })
         .collect();
-    let rope_rot = cx.tensor((HD, HD), DType::F32);
+    let rope_rot = cx.tensor(vec![HD, HD], DType::F32);
     let model = MiniGemma3::new(VOCAB, D, FF, NH, NKV, HD, LAYERS, 1, 2, &mut cx);
     let (logits, _caches_out) = model.forward(
         ids,

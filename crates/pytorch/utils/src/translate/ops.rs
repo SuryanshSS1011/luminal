@@ -413,13 +413,14 @@ impl Translator<'_> {
 
     pub(super) fn translate_cumulative(&mut self, node: &Node, prod: bool) -> Result<GraphTensor> {
         let x = self.operand(&node.inputs[0])?;
-        // ATen accumulates in the declared output dtype: bool and narrow
-        // integers promote to i64 by default, and dtype= overrides that.
-        // Casting only the scan result would lose carries or overflow first.
-        let x = super::convert(x, self.compute_dtype(node)?);
+        // ATen casts BEFORE scanning: absent dtype promotes bool/integer
+        // inputs to int64; an explicit dtype overrides that default. PT2's
+        // output metadata has already resolved both cases, even when the
+        // exported node has no dtype argument or explicit cast. Luminal's
+        // scans themselves preserve their operand dtype.
+        let x = super::convert(x, self.output_meta_dtype(node)?);
         let dim = self.get_int_arg(node, 1)?;
-        // A rank-0 scan is the identity, and only dims torch accepts there
-        // reach it.
+        // A rank-0 scan is the identity AFTER the dtype conversion.
         if x.rank() == 0 {
             if dim != 0 && dim != -1 {
                 bail!("dim {dim} is out of range for a rank-0 value");
@@ -427,7 +428,11 @@ impl Translator<'_> {
             return Ok(x);
         }
         let dim = normalize_dim(dim, x.rank());
-        Ok(if prod { x.cumprod(dim) } else { x.cumsum(dim) })
+        Ok(if prod {
+            x.cumprod(vec![dim])
+        } else {
+            x.cumsum(vec![dim])
+        })
     }
 
     /// `max.dim` / `min.dim`: values and indices into one graph.
@@ -439,9 +444,9 @@ impl Translator<'_> {
             .or_else(|| node.inputs.get(2).and_then(|i| i.arg.as_bool()))
             .unwrap_or(false);
         let (values, indices) = if max {
-            (x.max(dim), x.argmax(dim))
+            (x.max(vec![dim]), x.argmax(dim))
         } else {
-            (x.min(dim), x.argmin(dim))
+            (x.min(vec![dim]), x.argmin(dim))
         };
         let indices = if indices.dtype != DType::I64 {
             indices.cast(DType::I64)
@@ -681,9 +686,9 @@ impl Translator<'_> {
         }
         let dim = normalize_dim(self.get_int_arg(node, 1)?, x.rank());
         Ok(if log {
-            x.log_softmax(dim)
+            x.log_softmax(vec![dim])
         } else {
-            x.softmax(dim)
+            x.softmax(vec![dim])
         })
     }
 

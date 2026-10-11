@@ -63,8 +63,8 @@ impl Linear {
         cx: &mut Graph,
     ) -> Self {
         Self {
-            weight: cx.named_tensor(ns.leaf("weight"), (inp, out), dtype),
-            bias: bias.then(|| cx.named_tensor(ns.leaf("bias"), out, dtype)),
+            weight: cx.named_tensor(ns.leaf("weight"), vec![inp, out], dtype),
+            bias: bias.then(|| cx.named_tensor(ns.leaf("bias"), vec![out], dtype)),
         }
     }
 
@@ -76,11 +76,22 @@ impl Linear {
         ns: &Namespace,
         cx: &mut Graph,
     ) -> Self {
-        Self::new(inp, out, bias, storage_dtype, ns, cx).cast_parameters(DType::F32)
+        Self::new(inp, out, bias, storage_dtype, ns, cx)
     }
 
     pub fn forward(&self, input: GraphTensor) -> GraphTensor {
-        luminal_nn::linear(input, self.weight, self.bias)
+        let output_dtype = input.dtype;
+        let input = if input.dtype == self.weight.dtype {
+            input
+        } else {
+            input.cast(self.weight.dtype)
+        };
+        let output = luminal_nn::linear(input, self.weight, self.bias);
+        if output.dtype == output_dtype {
+            output
+        } else {
+            output.cast(output_dtype)
+        }
     }
 
     /// Keep the named parameter inputs in their checkpoint storage dtype while
@@ -106,7 +117,7 @@ impl Embedding {
         cx: &mut Graph,
     ) -> Self {
         Self {
-            weight: cx.named_tensor(ns.leaf("weight"), (n_embeddings, embedding_dim), dtype),
+            weight: cx.named_tensor(ns.leaf("weight"), vec![n_embeddings, embedding_dim], dtype),
         }
     }
 
@@ -117,15 +128,26 @@ impl Embedding {
         ns: &Namespace,
         cx: &mut Graph,
     ) -> Self {
-        Self::new(n_embeddings, embedding_dim, storage_dtype, ns, cx).cast_parameters(DType::F32)
+        Self::new(n_embeddings, embedding_dim, storage_dtype, ns, cx)
     }
 
     pub fn forward(&self, input: GraphTensor) -> GraphTensor {
-        luminal_nn::embedding(input, self.weight)
+        luminal_nn::embedding(input, self.weight).cast(DType::F32)
     }
 
     pub fn reverse(&self, input: GraphTensor) -> GraphTensor {
-        luminal_nn::embedding_projection(input, self.weight)
+        let output_dtype = input.dtype;
+        let input = if input.dtype == self.weight.dtype {
+            input
+        } else {
+            input.cast(self.weight.dtype)
+        };
+        let output = luminal_nn::embedding_projection(input, self.weight);
+        if output.dtype == output_dtype {
+            output
+        } else {
+            output.cast(output_dtype)
+        }
     }
 
     pub fn cast_parameters(mut self, dtype: DType) -> Self {
@@ -156,8 +178,8 @@ impl LayerNorm {
         cx: &mut Graph,
     ) -> Self {
         Self {
-            weight: weight.then(|| cx.named_tensor(ns.leaf("weight"), dim, dtype)),
-            bias: bias.then(|| cx.named_tensor(ns.leaf("bias"), dim, dtype)),
+            weight: weight.then(|| cx.named_tensor(ns.leaf("weight"), vec![dim], dtype)),
+            bias: bias.then(|| cx.named_tensor(ns.leaf("bias"), vec![dim], dtype)),
             mean_norm,
             epsilon,
             unit_offset: false,
@@ -232,8 +254,12 @@ impl ConvND {
         let kernel = kernel.as_ref().to_vec();
         let kernel_product = kernel.iter().product::<usize>();
         Self {
-            weight: cx.named_tensor(ns.leaf("weight"), (ch_out, ch_in * kernel_product), dtype),
-            bias: bias.then(|| cx.named_tensor(ns.leaf("bias"), ch_out, dtype)),
+            weight: cx.named_tensor(
+                ns.leaf("weight"),
+                vec![ch_out, ch_in * kernel_product],
+                dtype,
+            ),
+            bias: bias.then(|| cx.named_tensor(ns.leaf("bias"), vec![ch_out], dtype)),
             config: luminal_nn::ConvNdConfig::new(kernel, stride, dilation, padding),
             ch_in,
             ch_out,
@@ -261,9 +287,13 @@ pub struct Fp8Linear {
 impl Fp8Linear {
     pub fn new(inp: usize, out: usize, ns: &Namespace, cx: &mut Graph) -> Self {
         Self {
-            weight: cx.named_tensor(ns.leaf("weight"), (out, inp), DType::F8E4M3FN),
-            input_scale: cx.named_tensor(ns.leaf("input_scale"), (), DType::F32),
-            weight_scale: cx.named_tensor(ns.leaf("weight_scale"), (), DType::F32),
+            weight: cx.named_tensor(ns.leaf("weight"), vec![out, inp], DType::F8E4M3FN),
+            input_scale: cx.named_tensor(ns.leaf("input_scale"), vec![] as Vec<usize>, DType::F32),
+            weight_scale: cx.named_tensor(
+                ns.leaf("weight_scale"),
+                vec![] as Vec<usize>,
+                DType::F32,
+            ),
             out,
         }
     }
@@ -298,8 +328,8 @@ pub fn named_heterogeneous_kv_cache_pool(
     let layers = kv_dims.iter().enumerate().map(|(layer, kv_dim)| {
         let layer_ns = ns.index(layer);
         luminal_nn::KvCache::new(
-            cx.named_tensor(layer_ns.leaf("k_cache"), (slots, *kv_dim), dtype),
-            cx.named_tensor(layer_ns.leaf("v_cache"), (slots, *kv_dim), dtype),
+            cx.named_tensor(layer_ns.leaf("k_cache"), vec![slots, *kv_dim], dtype),
+            cx.named_tensor(layer_ns.leaf("v_cache"), vec![slots, *kv_dim], dtype),
         )
     });
     luminal_nn::KvCachePool::from_layers(layers)

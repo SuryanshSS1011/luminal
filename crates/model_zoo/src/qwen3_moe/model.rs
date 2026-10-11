@@ -93,12 +93,12 @@ impl Qwen3MoeFfn {
             ),
             gate_up: cx.named_tensor(
                 experts.leaf("gate_up_proj"),
-                (d.experts, 2 * d.moe_intermediate, d.hidden),
+                vec![d.experts, 2 * d.moe_intermediate, d.hidden],
                 dtype,
             ),
             down: cx.named_tensor(
                 experts.leaf("down_proj"),
-                (d.experts, d.hidden, d.moe_intermediate),
+                vec![d.experts, d.hidden, d.moe_intermediate],
                 dtype,
             ),
             top_k: d.top_k,
@@ -107,7 +107,7 @@ impl Qwen3MoeFfn {
     }
 
     fn forward(&self, input: GraphTensor) -> GraphTensor {
-        let probabilities = self.router.forward(input).softmax(1);
+        let probabilities = self.router.forward(input).softmax(vec![1]);
         let expert_ids = probabilities.topk_indexes(self.top_k, 1);
         let routes = TopKRoutes::from_scores(probabilities, expert_ids).normalize();
 
@@ -115,7 +115,7 @@ impl Qwen3MoeFfn {
         let projected = routes
             .dispatch(input)
             .expand_dim(2, 1)
-            .matmul(gate_up.permute((0, 1, 3, 2)))
+            .matmul(gate_up.permute(vec![0, 1, 3, 2]))
             .squeeze(2);
         let gate = projected.slice_along(..self.intermediate, 2);
         let up = projected.slice_along(self.intermediate.., 2);
@@ -124,7 +124,7 @@ impl Qwen3MoeFfn {
         let down = routes.select(self.down).cast(DType::F32);
         let routed_output = hidden_states
             .expand_dim(2, 1)
-            .matmul(down.permute((0, 1, 3, 2)))
+            .matmul(down.permute(vec![0, 1, 3, 2]))
             .squeeze(2);
         routes.combine(routed_output)
     }
@@ -194,10 +194,10 @@ impl Qwen3MoeBlock {
                 cx,
             ),
             q_norm: cx
-                .named_tensor(attn.child("q_norm").leaf("weight"), d.head_dim, dtype)
+                .named_tensor(attn.child("q_norm").leaf("weight"), vec![d.head_dim], dtype)
                 .cast(DType::F32),
             k_norm: cx
-                .named_tensor(attn.child("k_norm").leaf("weight"), d.head_dim, dtype)
+                .named_tensor(attn.child("k_norm").leaf("weight"), vec![d.head_dim], dtype)
                 .cast(DType::F32),
             ffn_norm: LayerNorm::new_with_storage_dtype(
                 d.hidden,

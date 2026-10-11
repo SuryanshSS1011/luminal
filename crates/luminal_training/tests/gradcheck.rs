@@ -82,36 +82,44 @@ fn gradcheck(
 
 #[test]
 fn grad_sin() {
-    gradcheck(&[&[6]], &[seq(6, -1.5, 1.5)], |_, p| p[0].sin().sum(0));
+    gradcheck(&[&[6]], &[seq(6, -1.5, 1.5)], |_, p| {
+        p[0].sin().sum(vec![0])
+    });
 }
 
 #[test]
 fn grad_exp2() {
-    gradcheck(&[&[6]], &[seq(6, -1.0, 1.0)], |_, p| p[0].exp2().sum(0));
+    gradcheck(&[&[6]], &[seq(6, -1.0, 1.0)], |_, p| {
+        p[0].exp2().sum(vec![0])
+    });
 }
 
 #[test]
 fn grad_log2() {
-    gradcheck(&[&[6]], &[seq(6, 0.5, 2.5)], |_, p| p[0].log2().sum(0));
+    gradcheck(&[&[6]], &[seq(6, 0.5, 2.5)], |_, p| {
+        p[0].log2().sum(vec![0])
+    });
 }
 
 #[test]
 fn grad_recip() {
     gradcheck(&[&[6]], &[seq(6, 0.7, 2.0)], |_, p| {
-        p[0].reciprocal().sum(0)
+        p[0].reciprocal().sum(vec![0])
     });
 }
 
 #[test]
 fn grad_sqrt() {
-    gradcheck(&[&[6]], &[seq(6, 0.5, 3.0)], |_, p| p[0].sqrt().sum(0));
+    gradcheck(&[&[6]], &[seq(6, 0.5, 3.0)], |_, p| {
+        p[0].sqrt().sum(vec![0])
+    });
 }
 
 #[test]
 fn grad_unary_chain() {
     // exp(log(x)) composites through scale-by-constant Muls too
     gradcheck(&[&[5]], &[seq(5, 0.6, 2.0)], |_, p| {
-        (p[0].log() * p[0].exp()).sum(0)
+        (p[0].log() * p[0].exp()).sum(vec![0])
     });
 }
 
@@ -122,14 +130,14 @@ fn grad_mul() {
     gradcheck(
         &[&[2, 3], &[2, 3]],
         &[seq(6, -1.0, 1.0), seq(6, 0.5, 1.5)],
-        |_, p| (p[0] * p[1]).sum((0, 1)),
+        |_, p| (p[0] * p[1]).sum(vec![0, 1]),
     );
 }
 
 #[test]
 fn grad_add_scalar_and_mul_scalar() {
     gradcheck(&[&[4]], &[seq(4, -1.0, 1.0)], |_, p| {
-        ((p[0] * 3.0 + 1.0) * p[0]).sum(0)
+        ((p[0] * 3.0 + 1.0) * p[0]).sum(vec![0])
     });
 }
 
@@ -139,7 +147,7 @@ fn grad_broadcast_mul() {
     gradcheck(
         &[&[2, 3], &[3]],
         &[seq(6, -1.0, 1.0), seq(3, 0.5, 1.5)],
-        |_, p| (p[0] * p[1].expand_dim(0, 2)).sum((0, 1)),
+        |_, p| (p[0] * p[1].expand_dim(0, 2)).sum(vec![0, 1]),
     );
 }
 
@@ -148,7 +156,7 @@ fn grad_div() {
     gradcheck(
         &[&[4], &[4]],
         &[seq(4, -1.0, 1.0), seq(4, 0.8, 2.0)],
-        |_, p| (p[0] / p[1]).sum(0),
+        |_, p| (p[0] / p[1]).sum(vec![0]),
     );
 }
 
@@ -160,7 +168,7 @@ fn grad_transpose() {
     gradcheck(
         &[&[2, 3], &[3, 2]],
         &[seq(6, -1.0, 1.0), seq(6, 0.5, 1.5)],
-        |_, p| (p[0].permute((1, 0)) * p[1]).sum((0, 1)),
+        |_, p| (p[0].permute(vec![1, 0]) * p[1]).sum(vec![0, 1]),
     );
 }
 
@@ -169,7 +177,7 @@ fn grad_reshape() {
     // merge_dims: tests the Reshape unview path
     gradcheck(&[&[2, 3]], &[seq(6, -1.0, 1.0)], |_, p| {
         let flat = p[0].merge_dims(0, 1); // (6,)
-        (flat * flat).sum(0)
+        (flat * flat).sum(vec![0])
     });
 }
 
@@ -178,7 +186,7 @@ fn grad_slice_no_offset() {
     // Shrinking a dim without an offset stays a strided view: General unview path
     gradcheck(&[&[3, 4]], &[seq(12, -1.0, 1.0)], |_, p| {
         let s = p[0].slice_along(..2, 0); // (2, 4)
-        (s * s).sum((0, 1))
+        (s * s).sum(vec![0, 1])
     });
 }
 
@@ -187,7 +195,7 @@ fn grad_slice_with_offset() {
     // Offset slices lower to Gather(Iota): tests the Gather vjp
     gradcheck(&[&[3, 4]], &[seq(12, -1.0, 1.0)], |_, p| {
         let s = p[0].slice_along(1..3, 1); // (3, 2)
-        (s * s).sum((0, 1))
+        (s * s).sum(vec![0, 1])
     });
 }
 
@@ -195,7 +203,7 @@ fn grad_slice_with_offset() {
 fn grad_pad() {
     gradcheck(&[&[2, 3]], &[seq(6, -1.0, 1.0)], |_, p| {
         let padded = p[0].pad_along(1, 2, 1, 0.0); // (2, 6)
-        (padded * padded).sum((0, 1))
+        (padded * padded).sum(vec![0, 1])
     });
 }
 
@@ -206,7 +214,7 @@ fn grad_concat() {
         &[seq(4, -1.0, 1.0), seq(4, 0.5, 1.5)],
         |_, p| {
             let c = p[0].concat_along(p[1], 1); // (2, 4)
-            (c * c).sum((0, 1))
+            (c * c).sum(vec![0, 1])
         },
     );
 }
@@ -218,7 +226,7 @@ fn grad_gather_with_duplicate_indices() {
     gradcheck(&[&[6]], &[seq(6, -1.0, 1.0)], |cx, p| {
         let idx = cx.iota((expr('z') * 2 + 1) % 6, 4);
         let g = p[0].gather(idx); // (4,)
-        (g * g).sum(0)
+        (g * g).sum(vec![0])
     });
 }
 
@@ -229,7 +237,7 @@ fn grad_mod() {
     gradcheck(
         &[&[4], &[4]],
         &[vec![2.5, 3.7, 4.9, 3.1], vec![1.1, 1.4, 1.6, 0.9]],
-        |_, p| (p[0] % p[1]).sum(0),
+        |_, p| (p[0] % p[1]).sum(vec![0]),
     );
 }
 
@@ -243,7 +251,7 @@ fn grad_scatter_unique_indices() {
         |cx, p| {
             let idx = cx.iota(expr('z') * 2, 3); // [0, 2, 4]
             let out = p[1].scatter(idx, p[0]);
-            (out * out).sum(0)
+            (out * out).sum(vec![0])
         },
     );
 }
@@ -260,7 +268,7 @@ fn grad_scatter_duplicate_indices() {
         |cx, p| {
             let idx = cx.iota((expr('z') * 2) % 4, 3); // [0, 2, 0]
             let out = p[1].scatter(idx, p[0]);
-            (out * out).sum(0)
+            (out * out).sum(vec![0])
         },
     );
 }
@@ -274,7 +282,7 @@ fn grad_interior_overlapping_slices() {
         let h = p[0] * p[0]; // interior node
         let a = h.slice_along(0..3, 1); // cols 0..3
         let b = h.slice_along(1..4, 1); // cols 1..4 (overlaps cols 1..3)
-        (a * b).sum((0, 1))
+        (a * b).sum(vec![0, 1])
     });
 }
 
@@ -298,7 +306,7 @@ fn grad_conv1d_style_windows() {
                     None => term,
                 });
             }
-            (acc.unwrap() * acc.unwrap()).sum(0)
+            (acc.unwrap() * acc.unwrap()).sum(vec![0])
         },
     );
 }
@@ -308,7 +316,7 @@ fn grad_conv1d_style_windows() {
 #[test]
 fn grad_sum_reduce() {
     gradcheck(&[&[2, 3]], &[seq(6, -1.0, 1.0)], |_, p| {
-        p[0].sum(1).sin().sum(0)
+        p[0].sum(vec![1]).sin().sum(vec![0])
     });
 }
 
@@ -317,13 +325,13 @@ fn grad_max_reduce() {
     // Distinct values with gaps well above EPS so the argmax is stable under
     // perturbation.
     let vals: Vec<f32> = (0..6).map(|i| ((i * 5) % 6) as f32 * 0.5 + 0.1).collect();
-    gradcheck(&[&[2, 3]], &[vals], |_, p| p[0].max(1).sum(0));
+    gradcheck(&[&[2, 3]], &[vals], |_, p| p[0].max(vec![1]).sum(vec![0]));
 }
 
 #[test]
 fn grad_mean() {
     gradcheck(&[&[2, 3]], &[seq(6, -1.0, 1.0)], |_, p| {
-        (p[0].mean(1) * p[0].mean(1)).sum(0)
+        (p[0].mean(vec![1]) * p[0].mean(vec![1])).sum(vec![0])
     });
 }
 
@@ -334,7 +342,7 @@ fn grad_matmul() {
     gradcheck(
         &[&[2, 3], &[3, 2]],
         &[seq(6, -1.0, 1.0), seq(6, -1.0, 1.0)],
-        |_, p| p[0].matmul(p[1]).sum((0, 1)),
+        |_, p| p[0].matmul(p[1]).sum(vec![0, 1]),
     );
 }
 
@@ -343,7 +351,7 @@ fn grad_softmax() {
     gradcheck(
         &[&[2, 3], &[2, 3]],
         &[seq(6, -1.0, 1.0), seq(6, 0.5, 1.5)],
-        |_, p| (p[0].softmax(1) * p[1]).sum((0, 1)),
+        |_, p| (p[0].softmax(vec![1]) * p[1]).sum(vec![0, 1]),
     );
 }
 
@@ -354,7 +362,7 @@ fn grad_sigmoid_mse() {
         &[seq(6, -1.0, 1.0), seq(6, 0.2, 0.8)],
         |_, p| {
             let d = p[0].sigmoid() - p[1];
-            (d * d).mean((0, 1))
+            (d * d).mean(vec![0, 1])
         },
     );
 }
@@ -364,14 +372,14 @@ fn grad_sigmoid_mse() {
 #[test]
 fn mlp_training_decreases_loss() {
     let mut cx = Graph::new();
-    let x = cx.tensor((4, 3), DType::F32);
-    let y = cx.tensor((4, 2), DType::F32);
-    let w1 = cx.tensor((3, 8), DType::F32);
-    let w2 = cx.tensor((8, 2), DType::F32);
+    let x = cx.tensor(vec![4, 3], DType::F32);
+    let y = cx.tensor(vec![4, 2], DType::F32);
+    let w1 = cx.tensor(vec![3, 8], DType::F32);
+    let w2 = cx.tensor(vec![8, 2], DType::F32);
 
     let pred = x.matmul(w1).sigmoid().matmul(w2);
     let d = pred - y;
-    let loss = (d * d).mean((0, 1));
+    let loss = (d * d).mean(vec![0, 1]);
 
     let grads = cx.backward(loss, &[w1, w2]);
     let loss_out = loss.output();
@@ -423,7 +431,7 @@ fn grad_unfold_windows() {
     // differences verify the overlapping contributions accumulate exactly.
     gradcheck(&[&[4, 4]], &[seq(16, -1.0, 1.0)], |_, p| {
         let h = p[0].sin(); // interior: gradient must flow through unfold
-        let u = h.unfold((2, 2), (1, 1), (1, 1)); // (3,3,2,2) windows
+        let u = h.unfold(vec![2, 2], vec![1, 1], vec![1, 1]); // (3,3,2,2) windows
         (u * u).sum(vec![0, 1, 2, 3])
     });
 }
@@ -434,7 +442,7 @@ fn grad_unfold_windows() {
 #[test]
 fn grad_convnd_weight() {
     let mut cx = Graph::new();
-    let x = cx.tensor((1, 1, 3, 3), DType::F32);
+    let x = cx.tensor(vec![1, 1, 3, 3], DType::F32);
     let conv = model_support::ConvND::new(
         1,
         2,
