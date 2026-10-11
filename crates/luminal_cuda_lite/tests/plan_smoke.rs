@@ -16,8 +16,8 @@ use support::TestTransfers;
 )]
 fn search_produces_a_codegen_complete_plan() {
     let mut cx = luminal::graph::Graph::new();
-    let a = cx.tensor((2usize, 3usize), DType::F32);
-    let b = cx.tensor((2usize, 3usize), DType::F32);
+    let a = cx.tensor(vec![2usize, 3usize], DType::F32);
+    let b = cx.tensor(vec![2usize, 3usize], DType::F32);
     let _out = (a + b) * a;
 
     let mut rt = CudaRuntime::load(&cx).expect("load");
@@ -130,7 +130,7 @@ fn codegen_emits_wellformed_sources() {
 #[test]
 fn search_refuses_without_a_device() {
     let mut graph = luminal::graph::Graph::new();
-    let input = graph.tensor(3, DType::F32);
+    let input = graph.tensor(vec![3], DType::F32);
     let _out = input + 1.;
     let mut runtime = CudaRuntime::load(&graph).unwrap();
     runtime

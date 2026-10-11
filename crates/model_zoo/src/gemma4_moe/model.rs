@@ -150,20 +150,20 @@ impl Gemma4MoeFfn {
                 &router.child("proj"),
                 cx,
             ),
-            router_scale: cx.named_tensor(router.leaf("scale"), d.hidden, DType::F32),
+            router_scale: cx.named_tensor(router.leaf("scale"), vec![d.hidden], DType::F32),
             per_expert_scale: cx.named_tensor(
                 router.leaf("per_expert_scale"),
-                d.experts,
+                vec![d.experts],
                 DType::F32,
             ),
             gate_up: cx.named_tensor(
                 experts.leaf("gate_up_proj"),
-                (d.experts, 2 * d.moe_intermediate, d.hidden),
+                vec![d.experts, 2 * d.moe_intermediate, d.hidden],
                 DType::F32,
             ),
             down: cx.named_tensor(
                 experts.leaf("down_proj"),
-                (d.experts, d.hidden, d.moe_intermediate),
+                vec![d.experts, d.hidden, d.moe_intermediate],
                 DType::F32,
             ),
             hidden: d.hidden,
@@ -179,8 +179,8 @@ impl Gemma4MoeFfn {
 
         // Router: std-normed raw stream × router.scale × 1/sqrt(hidden).
         let scale = self.router_scale.expand_lhs(&raw.dims()[..1]);
-        let router_hidden = raw.std_norm(1, self.rms_eps) * scale * (h as f32).sqrt().recip();
-        let probs = self.router_proj.forward(router_hidden).softmax(1);
+        let router_hidden = raw.std_norm(vec![1], self.rms_eps) * scale * (h as f32).sqrt().recip();
+        let probs = self.router_proj.forward(router_hidden).softmax(vec![1]);
         let expert_ids = probs.topk_indexes(self.top_k, 1);
         let routes = TopKRoutes::from_scores(probs, expert_ids).normalize();
         let scaled_weights = routes.weights() * routes.select(self.per_expert_scale);
@@ -190,7 +190,7 @@ impl Gemma4MoeFfn {
         let projected = routes
             .dispatch(normed)
             .expand_dim(2, 1)
-            .matmul(gate_up.permute((0, 1, 3, 2)))
+            .matmul(gate_up.permute(vec![0, 1, 3, 2]))
             .squeeze(2);
 
         let gate = projected.slice_along(..self.intermediate, 2);
@@ -200,7 +200,7 @@ impl Gemma4MoeFfn {
         let down = routes.select(self.down);
         let routed_output = hidden_states
             .expand_dim(2, 1)
-            .matmul(down.permute((0, 1, 3, 2)))
+            .matmul(down.permute(vec![0, 1, 3, 2]))
             .squeeze(2);
         routes.combine(routed_output)
     }
@@ -271,7 +271,7 @@ impl Gemma4Block {
             post_ff_norm_1: rms("post_feedforward_layernorm_1", cx),
             pre_ff_norm_2: rms("pre_feedforward_layernorm_2", cx),
             post_ff_norm_2: rms("post_feedforward_layernorm_2", cx),
-            layer_scalar: cx.named_tensor(ns.leaf("layer_scalar"), 1, DType::F32),
+            layer_scalar: cx.named_tensor(ns.leaf("layer_scalar"), vec![1], DType::F32),
             wq: Linear::new(
                 d.hidden,
                 q_dim,
@@ -306,8 +306,16 @@ impl Gemma4Block {
                 &attn.child("o_proj"),
                 cx,
             ),
-            q_norm: cx.named_tensor(attn.child("q_norm").leaf("weight"), head_dim, DType::F32),
-            k_norm: cx.named_tensor(attn.child("k_norm").leaf("weight"), head_dim, DType::F32),
+            q_norm: cx.named_tensor(
+                attn.child("q_norm").leaf("weight"),
+                vec![head_dim],
+                DType::F32,
+            ),
+            k_norm: cx.named_tensor(
+                attn.child("k_norm").leaf("weight"),
+                vec![head_dim],
+                DType::F32,
+            ),
             gate: Linear::new(
                 d.hidden,
                 d.dense_intermediate,

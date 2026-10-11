@@ -120,14 +120,14 @@ fn rmsnorm(x: GraphTensor, weight: GraphTensor, eps: f32) -> GraphTensor {
     };
     let x_rank = x.dims().len();
     let w_rank = w.dims().len();
-    x.std_norm(x_rank - 1, eps) * w.expand_lhs(&x.dims()[..x_rank - w_rank])
+    x.std_norm(vec![x_rank - 1], eps) * w.expand_lhs(&x.dims()[..x_rank - w_rank])
 }
 
 /// LayerNorm with no affine parameters (mean-norm + std-norm only).
 /// Matches `nn.LayerNorm(dim, elementwise_affine=False)` in PyTorch.
 fn layernorm_noaffine(x: GraphTensor, eps: f32) -> GraphTensor {
     let last = x.rank() - 1;
-    x.layer_norm(last, eps)
+    x.layer_norm(vec![last], eps)
 }
 
 /// Apply rotary embedding. `x` is `(S, H, D)` and `(cos, sin)` are `(S, D)`.
@@ -143,8 +143,22 @@ fn apply_rope(x: GraphTensor, cos: GraphTensor, sin: GraphTensor) -> GraphTensor
     assert!(d % 2 == 0, "RoPE head_dim must be even");
 
     let pairs = x.split_dims(2, 2_usize);
-    let x_a = pairs.slice((.., .., .., ..1)).squeeze(3);
-    let x_b = pairs.slice((.., .., .., 1..)).squeeze(3);
+    let x_a = pairs
+        .slice(vec![
+            (..).bounds(),
+            (..).bounds(),
+            (..).bounds(),
+            (..1).bounds(),
+        ])
+        .squeeze(3);
+    let x_b = pairs
+        .slice(vec![
+            (..).bounds(),
+            (..).bounds(),
+            (..).bounds(),
+            (1..).bounds(),
+        ])
+        .squeeze(3);
 
     let neg_b = x_b * (-1.0_f32);
     let rotated_pairs = neg_b
@@ -171,7 +185,7 @@ fn sdpa(q: GraphTensor, k: GraphTensor, v: GraphTensor) -> GraphTensor {
     let k = k * 1.0_f32;
     let v = v * 1.0_f32;
     let scores = q.matmul(k.transpose(1, 2)) * scale; // (H, S, S)
-    let attn_w = scores.softmax(2);
+    let attn_w = scores.softmax(vec![2]);
     let attn = attn_w.matmul(v); // (H, S, D)
     attn.transpose(0, 1) // (S, H, D)
 }
@@ -185,13 +199,13 @@ fn swiglu(x: GraphTensor) -> GraphTensor {
     let half = last / 2;
     match dims.len() {
         2 => {
-            let x1 = x.slice((.., ..half));
-            let x2 = x.slice((.., half..));
+            let x1 = x.slice(vec![(..).bounds(), (..half).bounds()]);
+            let x2 = x.slice(vec![(..).bounds(), (half..).bounds()]);
             x1.silu() * x2
         }
         3 => {
-            let x1 = x.slice((.., .., ..half));
-            let x2 = x.slice((.., .., half..));
+            let x1 = x.slice(vec![(..).bounds(), (..).bounds(), (..half).bounds()]);
+            let x2 = x.slice(vec![(..).bounds(), (..).bounds(), (half..).bounds()]);
             x1.silu() * x2
         }
         n => panic!("swiglu: unsupported rank {n}"),
@@ -249,9 +263,9 @@ fn split_modulation(
     let mut out = Vec::with_capacity(sets);
     for i in 0..sets {
         let base = 3 * i * dim;
-        let shift = mod_t.slice((base..base + dim,));
-        let scale = mod_t.slice((base + dim..base + 2 * dim,));
-        let gate = mod_t.slice((base + 2 * dim..base + 3 * dim,));
+        let shift = mod_t.slice(vec![(base..base + dim).bounds()]);
+        let scale = mod_t.slice(vec![(base + dim..base + 2 * dim).bounds()]);
+        let gate = mod_t.slice(vec![(base + 2 * dim..base + 3 * dim).bounds()]);
         out.push((shift, scale, gate));
     }
     out
@@ -280,12 +294,12 @@ impl FeedForward {
         Self {
             linear_in: cx.named_tensor(
                 format!("{prefix}.linear_in.weight"),
-                (mlp_hidden * 2, dim),
+                vec![mlp_hidden * 2, dim],
                 WEIGHT_DTYPE,
             ),
             linear_out: cx.named_tensor(
                 format!("{prefix}.linear_out.weight"),
-                (dim, mlp_hidden),
+                vec![dim, mlp_hidden],
                 WEIGHT_DTYPE,
             ),
         }
@@ -320,7 +334,7 @@ struct DoubleStreamAttn {
 impl DoubleStreamAttn {
     fn new(prefix: &str, cx: &mut Graph) -> Self {
         let lin = |n: &str, cx: &mut Graph| -> GraphTensor {
-            cx.named_tensor(format!("{prefix}.{n}"), (HIDDEN, HIDDEN), WEIGHT_DTYPE)
+            cx.named_tensor(format!("{prefix}.{n}"), vec![HIDDEN, HIDDEN], WEIGHT_DTYPE)
         };
         Self {
             to_q: lin("to_q.weight", cx),
@@ -329,16 +343,24 @@ impl DoubleStreamAttn {
             add_q_proj: lin("add_q_proj.weight", cx),
             add_k_proj: lin("add_k_proj.weight", cx),
             add_v_proj: lin("add_v_proj.weight", cx),
-            norm_q: cx.named_tensor(format!("{prefix}.norm_q.weight"), HEAD_DIM, WEIGHT_DTYPE),
-            norm_k: cx.named_tensor(format!("{prefix}.norm_k.weight"), HEAD_DIM, WEIGHT_DTYPE),
+            norm_q: cx.named_tensor(
+                format!("{prefix}.norm_q.weight"),
+                vec![HEAD_DIM],
+                WEIGHT_DTYPE,
+            ),
+            norm_k: cx.named_tensor(
+                format!("{prefix}.norm_k.weight"),
+                vec![HEAD_DIM],
+                WEIGHT_DTYPE,
+            ),
             norm_added_q: cx.named_tensor(
                 format!("{prefix}.norm_added_q.weight"),
-                HEAD_DIM,
+                vec![HEAD_DIM],
                 WEIGHT_DTYPE,
             ),
             norm_added_k: cx.named_tensor(
                 format!("{prefix}.norm_added_k.weight"),
-                HEAD_DIM,
+                vec![HEAD_DIM],
                 WEIGHT_DTYPE,
             ),
             to_out: lin("to_out.0.weight", cx),
@@ -404,8 +426,8 @@ impl DoubleStreamAttn {
         let attn = attn.merge_dims(1, 2) * 1.0_f32; // (S_total, HIDDEN)
 
         // Split back into txt + img streams.
-        let attn_txt = attn.slice((..s_txt, ..));
-        let attn_img = attn.slice((s_txt..s_txt + s_img, ..));
+        let attn_txt = attn.slice(vec![(..s_txt).bounds(), (..).bounds()]);
+        let attn_img = attn.slice(vec![(s_txt..s_txt + s_img).bounds(), (..).bounds()]);
 
         let img_out = linear_no_bias(attn_img, self.to_out);
         let txt_out = linear_no_bias(attn_txt, self.to_add_out);
@@ -430,14 +452,22 @@ impl SingleStreamAttn {
         Self {
             to_qkv_mlp_proj: cx.named_tensor(
                 format!("{prefix}.to_qkv_mlp_proj.weight"),
-                (qkv_mlp_out, HIDDEN),
+                vec![qkv_mlp_out, HIDDEN],
                 WEIGHT_DTYPE,
             ),
-            norm_q: cx.named_tensor(format!("{prefix}.norm_q.weight"), HEAD_DIM, WEIGHT_DTYPE),
-            norm_k: cx.named_tensor(format!("{prefix}.norm_k.weight"), HEAD_DIM, WEIGHT_DTYPE),
+            norm_q: cx.named_tensor(
+                format!("{prefix}.norm_q.weight"),
+                vec![HEAD_DIM],
+                WEIGHT_DTYPE,
+            ),
+            norm_k: cx.named_tensor(
+                format!("{prefix}.norm_k.weight"),
+                vec![HEAD_DIM],
+                WEIGHT_DTYPE,
+            ),
             to_out: cx.named_tensor(
                 format!("{prefix}.to_out.weight"),
-                (HIDDEN, HIDDEN + MLP_HIDDEN),
+                vec![HIDDEN, HIDDEN + MLP_HIDDEN],
                 WEIGHT_DTYPE,
             ),
         }
@@ -452,12 +482,12 @@ impl SingleStreamAttn {
     ) -> GraphTensor {
         let projected = linear_no_bias(hidden, self.to_qkv_mlp_proj);
         let qkv_size = 3 * HIDDEN;
-        let qkv = projected.slice((.., ..qkv_size));
-        let mlp_in = projected.slice((.., qkv_size..));
+        let qkv = projected.slice(vec![(..).bounds(), (..qkv_size).bounds()]);
+        let mlp_in = projected.slice(vec![(..).bounds(), (qkv_size..).bounds()]);
 
-        let q = qkv.slice((.., ..HIDDEN));
-        let k = qkv.slice((.., HIDDEN..2 * HIDDEN));
-        let v = qkv.slice((.., 2 * HIDDEN..));
+        let q = qkv.slice(vec![(..).bounds(), (..HIDDEN).bounds()]);
+        let k = qkv.slice(vec![(..).bounds(), (HIDDEN..2 * HIDDEN).bounds()]);
+        let v = qkv.slice(vec![(..).bounds(), (2 * HIDDEN..).bounds()]);
 
         let q = q.split_dims(1, HEAD_DIM); // (S, H, D)
         let k = k.split_dims(1, HEAD_DIM);
@@ -705,7 +735,7 @@ impl Flux2Transformer {
     pub fn init(cx: &mut Graph) -> Self {
         let bf16 = WEIGHT_DTYPE;
         let mk = |name: &str, shape: (usize, usize), cx: &mut Graph| -> GraphTensor {
-            cx.named_tensor(name, shape, bf16)
+            cx.named_tensor(name, vec![shape.0, shape.1], bf16)
         };
 
         let x_embedder = mk("x_embedder.weight", (HIDDEN, IN_CHANNELS), cx);
@@ -849,13 +879,13 @@ impl Flux2Transformer {
         }
 
         // Drop text prefix.
-        let img = hidden.slice((s_txt..s_txt + s_img, ..));
+        let img = hidden.slice(vec![(s_txt..s_txt + s_img).bounds(), (..).bounds()]);
 
         // AdaLayerNormContinuous: scale, shift = chunk(linear(silu(temb)), 2).
         let emb = linear_no_bias(temb.silu(), self.norm_out_lin);
         let half = HIDDEN;
-        let scale = emb.slice((..half,));
-        let shift = emb.slice((half..,));
+        let scale = emb.slice(vec![(..half).bounds()]);
+        let shift = emb.slice(vec![(half..).bounds()]);
         let normed = layernorm_noaffine(img, RMS_EPS);
         let modulated = ada_modulate(normed, scale, shift);
 
